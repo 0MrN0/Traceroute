@@ -15,5 +15,5 @@
 
 ```bash 
 git clone https://github.com/0MrN0/Traceroute.git
-python3 traceroute.py <host>
+sudo python3 traceroute.py <host>
 ```
