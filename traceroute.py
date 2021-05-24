@@ -76,14 +76,9 @@ def get_whois_iana_data(addr):
             iana_info = whois_sock.recv(1024).decode()
             whois_addr_start = iana_info.index('whois')
             whois_addr_end = iana_info.index('\n', whois_addr_start)
-            whois_addr = \
-                iana_info[whois_addr_start:whois_addr_end].replace(' ',
-                                                                   '').split(
-                    ':')[0]
-            return whois_addr
-        except (socket.timeout, ValueError):
-            pass
-    return ''
+            return iana_info[whois_addr_start:whois_addr_end].replace(' ', '')
+        except (socket.timeout, ValueError, socket.gaierror):
+            return ''
 
 
 def get_whois_data(addr: str):
@@ -95,12 +90,12 @@ def get_whois_data(addr: str):
         whois_sock.settimeout(2)
         whois_sock.connect((whois_addr, 43))
         whois_sock.send(addr.encode(encoding='utf-8') + b'\r\n')
-        data = b''
+        data = bytearray()
         while True:
             temp_data = whois_sock.recv(1024)
             if not temp_data:
                 break
-            data += temp_data
+            data.extend(temp_data)
         try:
             data = data.decode()
         except UnicodeDecodeError:
@@ -109,8 +104,8 @@ def get_whois_data(addr: str):
             try:
                 field_start = data.index(field)
                 field_end = data.index('\n', field_start)
-                field_data = \
-                    data[field_start:field_end].replace(' ', '').split(':')[1]
+                key_value_data = data[field_start:field_end]
+                field_data = key_value_data.replace(' ', '').split(':')[1]
                 whois_data[field] = field_data
             except ValueError:
                 continue
@@ -125,7 +120,7 @@ def trace(address):
     except socket.gaierror:
         print('Wrong address to traceroute')
         exit(1)
-    n = 1
+    success_number = 1
     if address == socket.gethostbyname('localhost'):
         max_hops = 1
     while ttl <= max_hops:
@@ -141,15 +136,16 @@ def trace(address):
             data, conn = sock_receiver.recvfrom(1024)
             whois_data = get_whois_data(conn[0])
             icmp_response = IcmpPacket.from_bytes(data[20:])
-            trace_result = TraceResult.from_whois_data(address, n, whois_data)
-            n += 1
+            trace_result = TraceResult.from_whois_data(conn[0], success_number, whois_data)
+            success_number += 1
             yield trace_result
-            ttl += 1
             if icmp_response.is_echo_reply():
                 sock_sender.close()
                 sock_receiver.close()
                 break
         except socket.timeout:
+            pass
+        finally:
             ttl += 1
 
 
@@ -166,5 +162,5 @@ if __name__ == '__main__':
         for res in trace(host):
             print(res, end='\r\n')
     except PermissionError:
-        print(f'Not enough rights. Try sudo or run as admin')
+        print('Not enough rights. Try sudo or run as admin')
         exit(1)
